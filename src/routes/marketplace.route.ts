@@ -7,7 +7,7 @@ import { auth } from "../../auth";
 
 const router = new Hono();
 
-const { fulfillment, claim } = createMarketplaceController({
+export const marketplaceHandlers = createMarketplaceController({
   resolve: createMarketplaceResolver(),
   store: drizzleMarketplaceStore,
   getSessionUser: async (c: Context) => {
@@ -15,6 +15,8 @@ const { fulfillment, claim } = createMarketplaceController({
     return session?.user ? { id: session.user.id } : null;
   },
 });
+
+const { fulfillment, claim } = marketplaceHandlers;
 
 // AWS Marketplace sends this cross-site; exempt from CSRF at the app level.
 router.post("/fulfillment", fulfillment);
