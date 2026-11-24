@@ -21,7 +21,7 @@ class CartRepository extends BaseRepository {
     try {
       const cart = await db.query.cart.findFirst({
         where: (c, { eq, and }) => and(
-          eq(c.user_id, Number(user_id)),
+          eq(c.client_id, Number(user_id)),
           eq(c.business_id, business_id)
         )
       });

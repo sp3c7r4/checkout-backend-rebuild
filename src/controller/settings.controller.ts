@@ -21,7 +21,8 @@ export async function updateSettings(data: any) {
   const { admin_id, settings_id, mass_view, notifications, weekly_reports } = data;
   console.log(mass_view, notifications, weekly_reports)
   const [_, settings] = await Promise.all([getAdminById(admin_id), getSettingsById(settings_id)]);
-  const spreadsheet = await getSheeetByBusinessId(settings.business_id);
+  // only mass_view touches the spreadsheet; notifications/weekly_reports are local
+  const spreadsheet = mass_view !== undefined ? await getSheeetByBusinessId(settings.business_id) : null;
   // if ( !mass_view && !notifications && !weekly_reports ) return BAD_REQUEST('No setting to update')
   mass_view !== undefined && await toggleVisibility(spreadsheet.spreadsheet_id, mass_view);
   notifications !== undefined && await toggleNotifications(settings.id, notifications);

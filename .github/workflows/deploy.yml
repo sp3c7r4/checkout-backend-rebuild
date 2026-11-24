@@ -1,0 +1,48 @@
+name: Deploy API + bot
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HOST: ${{ secrets.EC2_HOST }}
+    steps:
+      - name: Skip when no host is configured
+        if: env.HOST == ''
+        run: echo "EC2_HOST secret not set - skipping deploy"
+
+      - name: Checkout
+        if: env.HOST != ''
+        uses: actions/checkout@v4
+
+      - name: Typecheck
+        if: env.HOST != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - if: env.HOST != ''
+        run: npm ci --no-audit --no-fund && npx tsc --noEmit
+
+      - name: Deploy over SSH
+        if: env.HOST != ''
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd /srv/checkout
+            git -C backend fetch --all && git -C backend reset --hard origin/main
+            docker compose build api bot
+            docker compose up -d api bot
+            docker compose ps

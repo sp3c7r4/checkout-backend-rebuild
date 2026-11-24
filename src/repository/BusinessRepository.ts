@@ -14,6 +14,8 @@ class BusinessRepository extends BaseRepository {
         where: (b, { eq }) => eq(b.id, id),
         with: {
           address: true,
+          settings: true,
+          spreadsheet: true,
         },
       });
       return findOne;

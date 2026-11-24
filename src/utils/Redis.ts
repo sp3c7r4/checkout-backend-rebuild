@@ -55,7 +55,7 @@ export class RedisSessionManager {
         return this.createDefaultSession();
       }
 
-      const session = JSON.parse(sessionData) as UserSession;
+      const session = JSON.parse(String(sessionData)) as UserSession;
       
       // Check if session is expired (older than 1 hour of inactivity)
       const now = Date.now();
@@ -181,7 +181,7 @@ export class RedisSessionManager {
       for (const key of keys) {
         const sessionData = await this.client.get(key);
         if (sessionData) {
-          const session = JSON.parse(sessionData) as UserSession;
+          const session = JSON.parse(String(sessionData)) as UserSession;
           if (now - session.lastActivity > this.SESSION_TTL * 1000) {
             await this.client.del(key);
             console.log(`Cleaned up expired session: ${key}`);

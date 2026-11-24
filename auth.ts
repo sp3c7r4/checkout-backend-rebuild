@@ -3,25 +3,26 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "./src/db";
 import env from "./src/config/env";
  
+// Public root origin of this server; in production set API_ORIGIN.
+const apiOrigin = env.API_ORIGIN ?? `http://localhost:${env.PORT}`;
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
       provider: "pg"
     }),
   secret: env.BETTER_AUTH_SECRET || "your-secret-key-here", // Required for session signing
   trustedOrigins: [
-    "http://localhost:5173", // Your frontend
-    `http://localhost:${env.PORT}`, // Your backend
-    env.WEB_ORIGIN // Production frontend URL
+    env.WEB_ORIGIN, // frontend (dev: http://localhost:5173)
+    apiOrigin,
   ],
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day
-    cookieCache: {
-      enabled: true,
-      maxAge: 60 * 5 // 5 minutes
-    }
+    // no cookieCache: it would serve a stale user.business_id right after business creation
   },
-  socialProviders: {
+  ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+    ? {
+        socialProviders: {
     google: { 
       clientId: env.GOOGLE_CLIENT_ID as string, 
       clientSecret: env.GOOGLE_CLIENT_SECRET as string,
@@ -32,9 +33,11 @@ export const auth = betterAuth({
         "profile",
         "email",
       ],
-      redirectURI: `http://localhost:3000/api/auth/callback/google`
+      redirectURI: `${apiOrigin}/api/auth/callback/google`
     } 
-  },
+        },
+      }
+    : {}),
   emailAndPassword: { 
     enabled: true, 
   },
@@ -47,5 +50,5 @@ export const auth = betterAuth({
       }     
     }
   },
-  baseURL: `http://localhost:${env.PORT}`, // Your backend URL, not frontend
+  baseURL: apiOrigin,
 });

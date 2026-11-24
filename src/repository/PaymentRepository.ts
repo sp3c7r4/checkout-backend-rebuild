@@ -1,5 +1,5 @@
 import BaseRepository from "./BaseRepository";
-import { admin, payment, product, user } from "../db/schema";
+import { admin, payment, product } from "../db/schema";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";

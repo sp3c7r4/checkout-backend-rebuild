@@ -1,6 +1,6 @@
 import { Telegraf, Context, session } from 'telegraf';
 import Redis from 'ioredis';
-import { checkoutAgent } from '../mastra/agents';
+import { mastra } from '../mastra';
 import { getUserById } from '../helpers/user';
 import UserBusinessRepository from '../repository/UserBusinessRepository';
 import { getBusinessById } from '../helpers/business';
@@ -191,6 +191,8 @@ const help_commands =
 
 export default class Checkout {
   private bot: Telegraf<MyContext>;
+  /** Resolves once polling is up; rejects if Telegram rejects the token. */
+  started: Promise<unknown>;
   private readonly MAX_MESSAGE_LENGTH = 4096;
   // ❌ Removed: private BotSendMessageState = true; (global state)
   private sessionManager: RedisSessionManager;
@@ -200,7 +202,11 @@ export default class Checkout {
     this.sessionManager = new RedisSessionManager(redisConfig);
     
     // Create Telegraf bot instance
-    this.bot = new Telegraf<MyContext>(token);
+    // TELEGRAM_API_ROOT points polling at a reachable Bot API server
+    // (api.telegram.org is blocked on some networks).
+    this.bot = new Telegraf<MyContext>(token, {
+      telegram: { apiRoot: process.env.TELEGRAM_API_ROOT || "https://api.telegram.org" },
+    });
     
     // Setup middleware and handlers
     this.setupMiddleware();
@@ -208,8 +214,8 @@ export default class Checkout {
     this.setupListeners();
     this.setupCallbacks();
     
-    // Start the bot
-    this.bot.launch();
+    // Start polling; the entrypoint awaits this to fail fast on a bad token
+    this.started = this.bot.launch();
     
     // Enable graceful stop
     process.once('SIGINT', () => this.gracefulStop('SIGINT'));
@@ -627,7 +633,7 @@ export default class Checkout {
     }
 
     try {
-      const response = await checkoutAgent.generate(text, {
+      const response = await mastra.getAgent('checkoutAgent').generate(text, {
         threadId: `telegram-${current_business_id || 'default'}-${userId}`,
         resourceId: userId,
         context: [

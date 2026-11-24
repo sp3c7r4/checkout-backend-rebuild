@@ -354,7 +354,12 @@ export async function addProductsToDatabase(spreadsheetId: string, businessId: s
 }
 
 const checkoutGoogleSheetsService = new GoogleSheetsService();
-await checkoutGoogleSheetsService.initialize();
+// ponytail: sheets are optional at boot; calls fail with CE_INTERNAL_SERVER if creds are absent
+try {
+  await checkoutGoogleSheetsService.initialize();
+} catch (e) {
+  console.warn('Google Sheets disabled:', (e as Error).message);
+}
 
 export default checkoutGoogleSheetsService;
 

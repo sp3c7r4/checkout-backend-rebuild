@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 import env from '../config/env';
 
 const success_login_html = `
@@ -82,7 +82,7 @@ const success_login_html = `
 
 
 class Mailer {
-  private transporter: nodemailer.Transporter;
+  private transporter: Transporter;
 
 constructor() {
   this.transporter = nodemailer.createTransport({

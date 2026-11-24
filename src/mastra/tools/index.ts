@@ -1,5 +1,10 @@
 import { createTool } from "@mastra/core";
 import { z } from "zod";
+// AI SDK 4 serialises tool parameters with zod-to-json-schema, which only understands
+// zod 3. Handing it a zod 4 schema silently sends the model an empty parameter object.
+// Convert at the tool boundary instead.
+const params = (schema: z.ZodType) => z.toJSONSchema(schema) as any;
+
 import ProductRepository from "../../repository/ProductRepository";
 import CartRepository from "../../repository/CartRepository";
 import CustomError from "../../utils/Error";
@@ -21,13 +26,13 @@ import OrderRepository from "../../repository/OrderRepository";
 export const getProductRecommendationsTool = createTool({
   id: "getProductRecommendationsTool", 
   description: "This tool provides product recommendations based on cart items and suggests complementary products",
-  inputSchema: z.object({
+  inputSchema: params(z.object({
     user_id: z.string().describe("The user ID for getting recommendations"),
-  }),
+  })),
   outputSchema: z.object({
     success: z.boolean(),
     data: z.object({
-      recommendations: z.array(z.object({})).optional(),
+      recommendations: z.string().optional(),
       msg: z.string().optional(),
     }),
   }),
@@ -89,13 +94,16 @@ export const getProductRecommendationsTool = createTool({
 export const checkProductByNameTool = createTool({
   id: "checkProductByNameTool",
   description: "This tool is used to check if a product exists in a supermarket",
-  inputSchema: z.object({
+  inputSchema: params(z.object({
     user_id: z.string().describe("The user ID of the person checking the product"),
     product_name: z.string().describe("The name of the product you want to check"),
-  }),
+  })),
   outputSchema: z.object({
     success: z.boolean(),
-    data: z.object({}).optional().describe("The product details if found"),
+    data: z
+      .object({ msg: z.string().optional(), resp: z.string().optional() })
+      .optional()
+      .describe("The product details if found"),
   }),
   execute: async ({ context: { product_name, user_id } }) => {
     try {
@@ -157,9 +165,9 @@ export const checkProductByNameTool = createTool({
 export const readCartItems = createTool({
   id: "readCartItems",
   description: "This tool is used to read the items in the user's cart",
-  inputSchema: z.object({
+  inputSchema: params(z.object({
     user_id: z.string().describe("The user ID of the person reading the cart"),
-  }),
+  })),
   outputSchema: z.object({
     success: z.boolean(),
     data: z.object({}),
@@ -222,9 +230,9 @@ export const readCartItems = createTool({
 export const readAllStoreProducts = createTool({
   id: "readAllStoreProducts",
   description: "This tool is used to read all products in a supermarket",
-  inputSchema: z.object({
+  inputSchema: params(z.object({
     user_id: z.string().describe("The user ID of the person reading the cart"),
-  }),
+  })),
   outputSchema: z.object({
     success: z.boolean(),
     data: z.object({
@@ -274,11 +282,11 @@ export const readAllStoreProducts = createTool({
 export const placeOrderForCartItemsTool = createTool({
   id: "placeOrderForCartItemsTool",
   description: "This tool is used to place an order for cart items",
-  inputSchema: z.object({
+  inputSchema: params(z.object({
     user_id: z
       .string()
       .describe("The user ID of the person making the payment"),
-  }),
+  })),
   outputSchema: z.object({
     success: z.boolean(),
     data: z.object({
@@ -362,11 +370,17 @@ export const placeOrderForCartItemsTool = createTool({
 // Store for suspended workflow runs
 const suspendedWorkflows = new Map<string, any>();
 
+const userCheckOutputSchema = z.object({
+  status: z.enum(["completed", "suspended", "error"]),
+  message: z.string(),
+  suspendData: z.object({}).optional(),
+});
+
 export const userCheckWorkflowTool = createTool({
   id: "userCheckWorkflowTool",
   description:
     "This tool manages the user email and phone verification workflow with suspend/resume capability",
-  inputSchema: z.object({
+  inputSchema: params(z.object({
     user_id: z.string().describe("The user ID"),
     action: z
       .enum(["start", "resume"])
@@ -377,13 +391,11 @@ export const userCheckWorkflowTool = createTool({
       .optional()
       .describe("Email address when resuming"),
     phone: z.string().optional().describe("Phone number when resuming"),
-  }),
-  outputSchema: z.object({
-    status: z.enum(["completed", "suspended", "error"]),
-    message: z.string(),
-    suspendData: z.object({}).optional(),
-  }),
-  execute: async ({ context: { user_id, action, email, phone }, mastra }) => {
+  })),
+  outputSchema: userCheckOutputSchema,
+  execute: async (input): Promise<z.infer<typeof userCheckOutputSchema>> => {
+    const { user_id, action, email, phone } = input.context;
+    const mastra = input.mastra;
     try {
       console.log("userCheckWorkflowTool called with:", {
         user_id,

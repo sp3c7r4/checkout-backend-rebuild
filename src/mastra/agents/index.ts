@@ -1,46 +1,50 @@
-import { google } from "@ai-sdk/google";
 import { Agent } from "@mastra/core/agent";
 import { Memory } from "@mastra/memory";
 import { PgVector, PostgresStore } from "@mastra/pg";
 import env from "../../config/env";
 import * as tools from "../tools";
-import { userCheckWorkflow } from "../workflows";
+import { chatModel, embedder } from "../model";
 
-const prodConfig = {
-  vector: new PgVector({
-    connectionString: env.DB_MEMORY,
-    schemaName: "vector",
-    pgPoolOptions: {
-      max: 10,
-      idleTimeoutMillis: 60000,
-      connectionTimeoutMillis: 60000,
-      statement_timeout: 60000,
-      query_timeout: 60000,
-      keepAlive: true,
-      keepAliveInitialDelayMillis: 30000,
-      allowExitOnIdle: true
+const connectionString = env.DB_MEMORY || env.DATABASE_URL;
+
+// Semantic recall needs an embedder + a pgvector-capable database. Without a
+// Google key the bot still runs: Postgres keeps message history and working memory.
+const semanticRecall = env.GOOGLE_GENERATIVE_AI_API_KEY
+  ? {
+      vector: new PgVector({
+        connectionString,
+        schemaName: "vector",
+        pgPoolOptions: {
+          max: 10,
+          idleTimeoutMillis: 60000,
+          connectionTimeoutMillis: 60000,
+          statement_timeout: 60000,
+          query_timeout: 60000,
+          keepAlive: true,
+          keepAliveInitialDelayMillis: 30000,
+          allowExitOnIdle: true
+        }
+      }),
+      embedder,
     }
-  }),
+  : {};
+
+const memory = new Memory({
   storage: new PostgresStore({
-    connectionString: env.DB_MEMORY,
+    connectionString,
     schemaName: "storage",
     // @ts-ignore
     supports: {
       selectByIncludeResourceScope: true,
-      resourceWorkingMemory: true, // ✅ added
+      resourceWorkingMemory: true,
     },
   }),
-  embedder: google.textEmbeddingModel("text-embedding-004"),
-};
-
-const memory = new Memory({
-  ...prodConfig,
+  ...semanticRecall,
   options: {
     lastMessages: 5,
-    semanticRecall: {
-      topK: 5,
-      messageRange: 1,
-    },
+    ...(env.GOOGLE_GENERATIVE_AI_API_KEY
+      ? { semanticRecall: { topK: 5, messageRange: 1 } }
+      : {}),
     workingMemory: {
       enabled: true,
       template: `
@@ -267,9 +271,8 @@ export const checkoutAgent = new Agent({
   5. Step 4: Use placeOrderForCartItemsTool(user_id) when ready to pay
 
   `,
-  model: google("gemini-2.0-flash"),
+  model: chatModel,
   tools: { ...tools },
-  workflows: { userCheckWorkflow },
 });
 
 export const recommendationAgent = new Agent({
@@ -279,5 +282,5 @@ export const recommendationAgent = new Agent({
   You have access to a comprehensive set of inputs which's cartItemsInputs & storeProducts in which you'll provide product recommendation based on them.
 
   Your name is Recommendation. Built by Sp3c7r4(i.e. Spectra)`,
-  model: google("gemini-2.0-flash"),
+  model: chatModel,
 });

@@ -43,8 +43,7 @@ export async function updateBusiness(data: any) {
 
 export async function getBusiness(business_id: string) {
   const r = await getBusinessById(business_id);
-  console.log(r, "Post")
-  return OK('Business fetched successfully', r)
+  return OK('Business fetched successfully', BusinessResource(r))
 }
 
 // export async function updateBusiness(data: any) {
