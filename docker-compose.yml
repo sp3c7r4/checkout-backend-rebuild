@@ -40,6 +40,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-checkout}:${POSTGRES_PASSWORD:-checkout}@db:5432/${POSTGRES_DB:-checkout}
+      DB_MEMORY: postgres://${POSTGRES_USER:-checkout}:${POSTGRES_PASSWORD:-checkout}@db:5432/${POSTGRES_DB:-checkout}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     ports:
@@ -58,6 +59,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-checkout}:${POSTGRES_PASSWORD:-checkout}@db:5432/${POSTGRES_DB:-checkout}
+      DB_MEMORY: postgres://${POSTGRES_USER:-checkout}:${POSTGRES_PASSWORD:-checkout}@db:5432/${POSTGRES_DB:-checkout}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:
