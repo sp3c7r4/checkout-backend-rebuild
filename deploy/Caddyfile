@@ -1,0 +1,11 @@
+# /etc/caddy/Caddyfile on the box. Caddy issues and renews the certs.
+example.com {
+	encode gzip
+	reverse_proxy /api/* localhost:3000
+	reverse_proxy localhost:8080
+}
+
+api.example.com {
+	encode gzip
+	reverse_proxy localhost:3000
+}
