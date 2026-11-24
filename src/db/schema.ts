@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import { pgTable, varchar, json, integer, bigint, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, varchar, json, integer, bigint, text, timestamp, pgEnum, unique } from "drizzle-orm/pg-core";
 import { ulid } from 'ulid';
 import { CartProduct } from "../types/product";
 import { user as admin } from './../../auth-schema'
@@ -259,3 +259,35 @@ export const cartRelations = relations(cart, ({ one }) => ({
 }))
 
 export { admin }
+
+//? AWS Marketplace subscriptions
+export const marketplaceSubscriptionStatusEnum = pgEnum('marketplace_subscription_status', [
+  'active',
+  'canceled',
+  'expired',
+]);
+
+export const marketplaceSubscription = pgTable('marketplace_subscription', {
+  id: varchar({ length: 26 }).primaryKey().notNull().$defaultFn(() => ulid()),
+  // the subscribing organisation owns a dashboard account; null until they sign up
+  user_id: text('user_id').references(() => admin.id, { onDelete: 'set null' }),
+  customer_aws_account_id: varchar('customer_aws_account_id', { length: 32 }).notNull(),
+  product_code: varchar('product_code', { length: 100 }).notNull(),
+  license_arn: text('license_arn'),
+  status: marketplaceSubscriptionStatusEnum('status').notNull().default('active'),
+  created_at: timestamp('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updated_at: timestamp('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`).$onUpdate(() => sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  unique('marketplace_subscription_account_product').on(table.customer_aws_account_id, table.product_code),
+]);
+
+// resolved identifiers held until the buyer authenticates (15 minutes, single use)
+export const marketplacePending = pgTable('marketplace_pending', {
+  id: varchar({ length: 26 }).primaryKey().notNull().$defaultFn(() => ulid()),
+  customer_aws_account_id: varchar('customer_aws_account_id', { length: 32 }).notNull(),
+  product_code: varchar('product_code', { length: 100 }).notNull(),
+  license_arn: text('license_arn'),
+  expires_at: timestamp('expires_at', { withTimezone: true }).notNull(),
+  consumed_at: timestamp('consumed_at', { withTimezone: true }),
+  created_at: timestamp('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
+});

@@ -32,6 +32,9 @@ const EnvSchema = z.object({
   CLOUDINARY_API_KEY: z.string(),
   CLOUDINARY_API_SECRET: z.string(),
   PAYSTACK_SECRET_KEY: z.string(),
+  // AWS Marketplace SaaS fulfilment
+  AWS_MARKETPLACE_REGION: z.string().default('us-east-1'),
+  AWS_MARKETPLACE_PRODUCT_CODE: z.string().optional(),
 })
 
 export type Env = z.infer<typeof EnvSchema>

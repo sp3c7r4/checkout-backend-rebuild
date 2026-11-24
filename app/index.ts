@@ -1,9 +1,11 @@
 import { Context, Hono } from "hono";
 import { cors } from "hono/cors";
+import { csrf } from "hono/csrf";
 import env from "../src/config/env";
 import adminRoutes from '../src/routes/admin.route'
 import verifyRoutes from '../src/routes/verify.routes'
 import webhookRoutes from '../src/routes/webhook.route'
+import marketplaceRoutes from '../src/routes/marketplace.route'
 import { imageUpload } from '../src/controller/user.controller'
 import { base64Schema } from '../src/validation/schemas'
 import { zValidator } from '@hono/zod-validator'
@@ -22,6 +24,14 @@ app.use('/*', cors({
       : [env.WEB_ORIGIN, 'http://localhost:5174', 'http://localhost:5173'],
   credentials: true
 }))
+
+// Hono's csrf only inspects form-encoded/multipart/text bodies, so JSON API calls
+// are unaffected. AWS Marketplace posts a form cross-site, so that one route is exempt.
+const csrfGuard = csrf();
+app.use('*', async (c, next) => {
+  if (c.req.path === `${api_version}/marketplace/fulfillment`) return next();
+  return csrfGuard(c, next);
+});
 
 app.use('*', async (c, next) => {
   const methodColor = c.req.method === 'GET' ? chalk.green : chalk.red;
@@ -42,6 +52,7 @@ app.post(`${api_version}/user/image-base64`, zValidator('json', base64Schema), t
   return c.json(r, r.statusCode as any)
 }))
 app.route(`${api_version}/webhook/`, webhookRoutes)
+app.route(`${api_version}/marketplace`, marketplaceRoutes)
 // app.route(`${api_version}/admin`, adminRoute)
 
 app.get('/', (c: Context) => {
