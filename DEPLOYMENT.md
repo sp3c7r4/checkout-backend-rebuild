@@ -80,3 +80,44 @@ docker compose logs -f api          # "Server running at http://localhost:3000"
 docker compose exec api npx tsx -e "console.log(process.env.API_ORIGIN)"
 node e2e-api.mjs                    # 29 checks, needs BASE=http://localhost:3000
 ```
+
+## Current production topology (AWS)
+
+| Piece | Where | Notes |
+|---|---|---|
+| SPA | **Amplify Hosting** app `d1h9r18oox0754`, branch `main` → https://main.d1h9r18oox0754.amplifyapp.com | Manual zip deploys (no Git connection yet). SPA rewrite rule falls back to `/index.html`. |
+| API | **API Gateway HTTP API** `21uedtdh30` → https://21uedtdh30.execute-api.us-east-1.amazonaws.com | Route `$default` → HTTP_PROXY integration to `http://44.218.47.11:3000`. |
+| API runtime | EC2 `i-03707c8eb3e688111` (44.218.47.11) | `docker compose`: api, bot, db, redis (+ web, no longer the buyer-facing SPA). |
+
+### Two API Gateway details that cost time
+
+1. Do not put a path in the integration URI. `ANY /{proxy+}` with `http://host:3000` makes API Gateway send every request to that path — the backend then sees `POST /` for `/api/auth/sign-in/email`. Use a **`$default` route** with the bare host URI; the full path is forwarded.
+2. Amplify is static hosting, so `POST /` there is not possible. The Marketplace **fulfillment URL is the gateway**:
+   `https://21uedtdh30.execute-api.us-east-1.amazonaws.com/api/v1/marketplace/fulfillment`.
+   The handler `303`s to `WEB_ORIGIN` with `#mp=<id>`, which lands on the Amplify app.
+
+### Cross-site session cookie
+
+The SPA (`*.amplifyapp.com`) and the API (`*.execute-api.amazonaws.com`) are different sites, so `auth.ts`
+switches to `Secure; SameSite=None` cookies whenever `API_ORIGIN` is https and differs from `WEB_ORIGIN`.
+CORS allows both origins with credentials, driven by the same two env vars.
+
+- `WEB_ORIGIN` and `API_ORIGIN` in `/srv/checkout/backend/.env` must match the deployed SPA and gateway URLs,
+  or sign-in fails with no obvious error.
+- The IP-served SPA on port 80 still loads but is no longer an allowed origin, so its API calls get CORS errors.
+
+### Deploying the SPA to Amplify
+
+```bash
+cd frontend
+VITE_API_ORIGIN=https://21uedtdh30.execute-api.us-east-1.amazonaws.com \
+VITE_SERVER_ORIGIN=https://21uedtdh30.execute-api.us-east-1.amazonaws.com/api/v1 \
+npx vite build
+# zip the CONTENTS of dist (index.html at the archive root), then:
+aws amplify create-deployment --app-id d1h9r18oox0754 --branch-name main   # -> jobId + zipUploadUrl
+curl -H "Content-Type: application/zip" --upload-file site.zip "$ZIP_UPLOAD_URL"
+aws amplify start-deployment --app-id d1h9r18oox0754 --branch-name main --job-id "$JOB_ID"
+```
+
+Port 3000 stays public because API Gateway reaches the box over the instance IP; closing it needs an
+NLB + VPC Link (or CloudFront) in front of the instance.
