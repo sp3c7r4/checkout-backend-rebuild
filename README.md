@@ -45,15 +45,15 @@ That POST is handled by the API, never by the SPA:
 3. Identifiers are upserted into `marketplace_subscription`
    (unique on `customer_aws_account_id` + `product_code`).
 4. If the buyer has no session (always true on the cross-site POST), the identifiers
-   are parked in `marketplace_pending` and referenced by an httpOnly `mp_pending`
-   cookie for 15 minutes.
-5. The buyer is redirected with `303` to `/`; the SPA calls
+   are parked in `marketplace_pending` for 15 minutes and referenced by an opaque
+   single-use id in the redirect fragment: `303 ${WEB_ORIGIN}/#mp=<id>`.
+5. The SPA lifts the id out of the fragment, rewrites it away, and calls
    `POST /api/v1/marketplace/claim`, which attaches the parked identifiers to the
-   signed-in account and clears the cookie.
+   signed-in account.
 
 Set `AWS_MARKETPLACE_PRODUCT_CODE` in production; without it a valid token from any
-product is accepted. The pending cookie needs HTTPS (`Secure; SameSite=None`) to
-survive the cross-site POST.
+product is accepted. No cookie is involved, so the hand-off works across origins and
+without TLS - but serve the app over HTTPS anyway.
 
 ## Checks
 

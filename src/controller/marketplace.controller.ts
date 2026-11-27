@@ -4,12 +4,7 @@ import { isResolveFailure, type ResolveCustomerFn } from "../marketplace/client"
 import { renderBuyerErrorPage } from "../marketplace/messages";
 import type { MarketplaceStore } from "../marketplace/store";
 import { PENDING_TTL_MS } from "../marketplace/store";
-import {
-  clearPendingCookie,
-  readPendingCookie,
-  setPendingCookie,
-  tokenFingerprint,
-} from "../marketplace/cookie";
+import env from "../config/env";
 
 export interface MarketplaceSessionUser {
   id: string;
@@ -23,6 +18,18 @@ export interface MarketplaceControllerDeps {
 }
 
 const FORM_FIELD = "x-amzn-marketplace-token";
+const PENDING_HASH_KEY = "mp";
+
+/** Never log the token; this only reports whether one was present. */
+export const tokenFingerprint = (token: string | undefined): string =>
+  token ? `present:${token.length}` : "absent";
+
+/** The SPA origin, without a trailing slash, as the redirect target. */
+const webRoot = () => (env.WEB_ORIGIN ?? "").replace(/\/+$/, "");
+
+/** Bounded shape check; expiry and single use are enforced by the store. */
+const isPendingId = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0 && value.length <= 64;
 
 export function createMarketplaceController({ resolve, store, getSessionUser, log }: MarketplaceControllerDeps) {
   const logger = log ?? ((event, data) => console.error(`[marketplace] ${event}`, data));
@@ -71,17 +78,18 @@ export function createMarketplaceController({ resolve, store, getSessionUser, lo
           productCode: identifiers.productCode,
           customerAwsAccountId: identifiers.customerAwsAccountId,
         });
-        return c.redirect("/", 303);
+        return c.redirect(`${webRoot()}/`, 303);
       }
 
       const pending = await store.createPending(identifiers, PENDING_TTL_MS);
-      setPendingCookie(c, pending.id, Math.floor(PENDING_TTL_MS / 1000));
       logger("fulfillment_pending", {
         pendingId: pending.id,
         productCode: identifiers.productCode,
         customerAwsAccountId: identifiers.customerAwsAccountId,
       });
-      return c.redirect("/", 303);
+      // The id rides in the URL fragment: never sent to a server, never in a
+      // Referer, single use, and it survives the redirect into the SPA.
+      return c.redirect(`${webRoot()}/#${PENDING_HASH_KEY}=${pending.id}`, 303);
     },
 
     /** Called by the SPA once a session exists: attach the parked identifiers. */
@@ -91,14 +99,13 @@ export function createMarketplaceController({ resolve, store, getSessionUser, lo
         return c.json({ message: "Not signed in" }, 401);
       }
 
-      const pendingId = readPendingCookie(c);
-      if (!pendingId) {
+      const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+      const pendingId = (body as Record<string, unknown>)?.pending;
+      if (!isPendingId(pendingId)) {
         return c.json(OK("Nothing to link", null));
       }
 
       const pending = await store.consumePending(pendingId);
-      clearPendingCookie(c);
-
       if (!pending) {
         logger("claim_pending_unusable", { userId: user.id, pendingId });
         return c.json(OK("Marketplace setup link expired", null));

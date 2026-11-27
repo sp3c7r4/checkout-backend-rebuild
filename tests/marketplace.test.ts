@@ -111,10 +111,8 @@ test("successful resolve without a session parks the identifiers server-side", a
   const res = await app.request("/api/v1/marketplace/fulfillment", postForm(TOKEN));
 
   assert.equal(res.status, 303);
-  assert.equal(res.headers.get("location"), "/");
-  const cookie = res.headers.get("set-cookie") ?? "";
-  assert.match(cookie, /mp_pending=/);
-  assert.match(cookie, /HttpOnly/);
+  assert.equal(res.headers.get("set-cookie"), null);
+  assert.match(res.headers.get("location") ?? "", /\/#mp=./);
   assert.equal(store.subs.length, 0);
   assert.equal(store.pending.size, 1);
   const parked = [...store.pending.values()][0];
@@ -123,13 +121,14 @@ test("successful resolve without a session parks the identifiers server-side", a
   assert.equal(parked.licenseArn, LICENSE);
 });
 
-test("successful resolve with a session attaches immediately and sets no pending cookie", async () => {
+test("successful resolve with a session attaches immediately and carries no pending id", async () => {
   const store = fakeStore();
   const { app } = makeApp({ store, user: { id: "user-1" } });
   const res = await app.request("/api/v1/marketplace/fulfillment", postForm(TOKEN));
 
   assert.equal(res.status, 303);
   assert.equal(res.headers.get("set-cookie"), null);
+  assert.doesNotMatch(res.headers.get("location") ?? "", /#mp=/);
   assert.equal(store.subs.length, 1);
   assert.equal(store.subs[0].user_id, "user-1");
   assert.equal(store.subs[0].customer_aws_account_id, ACCOUNT);
@@ -191,22 +190,41 @@ test("claim links the parked identifiers to the signed-in account", async () => 
   const store = fakeStore();
   const parked = makeApp({ store });
   const res = await parked.app.request("/api/v1/marketplace/fulfillment", postForm(TOKEN));
-  const pendingCookie = (res.headers.get("set-cookie") ?? "").split(";")[0];
+  const pendingId = (res.headers.get("location") ?? "").split("#mp=")[1];
 
   const { app } = makeApp({ store, user: { id: "user-9" } });
-  const claim = await app.request("/api/v1/marketplace/claim", { method: "POST", headers: { cookie: pendingCookie } });
+  const claim = await app.request("/api/v1/marketplace/claim", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-test-user": "user-1" },
+    body: JSON.stringify({ pending: pendingId }),
+  });
 
   assert.equal(claim.status, 200);
   const body = (await claim.json()) as any;
   assert.equal(body.data.user_id, "user-9");
   assert.equal(body.data.customer_aws_account_id, ACCOUNT);
-  assert.match(claim.headers.get("set-cookie") ?? "", /mp_pending=;/);
+  assert.equal(claim.headers.get("set-cookie"), null);
 });
 
 test("claim without a session is refused", async () => {
   const { app } = makeApp({ user: null });
   const res = await app.request("/api/v1/marketplace/claim", { method: "POST" });
   assert.equal(res.status, 401);
+});
+
+test("claim without an id, or with a junk id, links nothing", async () => {
+  const store = fakeStore();
+  const { app } = makeApp({ store, user: { id: "user-1" } });
+  for (const body of ["{}", JSON.stringify({ pending: "" }), JSON.stringify({ pending: "x".repeat(500) })]) {
+    const res = await app.request("/api/v1/marketplace/claim", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /Nothing to link/);
+  }
+  assert.equal(store.subs.length, 0);
 });
 
 test("claim with an expired pending record explains what to do", async () => {
@@ -225,7 +243,11 @@ test("claim with an expired pending record explains what to do", async () => {
   });
 
   const { app } = makeApp({ store, user: { id: "user-1" } });
-  const res = await app.request("/api/v1/marketplace/claim", { method: "POST", headers: { cookie: `mp_pending=${id}` } });
+  const res = await app.request("/api/v1/marketplace/claim", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-test-user": "user-1" },
+    body: JSON.stringify({ pending: id }),
+  });
 
   assert.equal(res.status, 200);
   const body = (await res.json()) as any;
